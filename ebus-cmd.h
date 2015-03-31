@@ -77,7 +77,7 @@ struct cycbuf {
 struct commands {
 	int id; /**< command id */
 	char type[CMD_SIZE_TYPE + 1]; /**< type of message */
-	char class[CMD_SIZE_CLASS + 1]; /**< ci */
+	char ebusclass[CMD_SIZE_CLASS + 1]; /**< ci */
 	char cmd[CMD_SIZE_CMD + 1]; /**< hydraulic */
 	char com[CMD_SIZE_COM + 1]; /**< just a comment */	
 	int s_type; /**< message type */
@@ -102,7 +102,6 @@ struct element {
 	char d_valid[CMD_SIZE_D_VALID + 1]; /**< valid data */
 	char d_com[CMD_SIZE_D_COM + 1]; /**< just a comment */
 };
-
 
 
 /**
@@ -164,11 +163,11 @@ int eb_cmd_search_com_cyc(const unsigned char *hex, int hexlen);
 /**
  * @brief search given strings in command array
  * @param [in] *type pointer to message type 
- * @param [in] *class pointer to a ebus class
+ * @param [in] *ebusclass pointer to a ebus ebusclass
  * @param [in] *cmd pointer to a ebus command
  * @return 0-x id of found ebus command in array | -1 command not found
  */
-int eb_cmd_search_com_id(const char *type, const char *class, const char *cmd);
+int eb_cmd_search_com_id(const char *type, const char *ebusclass, const char *cmd);
 
 /**
  * @brief search given strings in command array

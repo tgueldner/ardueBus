@@ -39,7 +39,7 @@
 
 struct timeval {
 	long tv_sec; /* second */
-	long tv_usec; /* microsecond */
+	unsigned long tv_usec; /* microsecond */
 };
 
 /**
@@ -140,7 +140,7 @@ int eb_diff_time(const struct timeval *tact, const struct timeval *tlast, struct
  * @param [in] *file device
  * @return 0 ok | -1 error
  */
-int eb_raw_file_open(const char *file);
+int eb_raw_file_open(const char *file); 
 
 /**
  * @brief close a file.

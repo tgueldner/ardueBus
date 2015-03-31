@@ -40,12 +40,11 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
-#include <Serial.h>
+#include <Logging.h>
 
 #include "ebus-decode.h"
-#include "ebus-cmd.h"
 #include "ebus-bus.h"
-
+#include "ebus-cmd.h"
 
 
 static struct send_data send_data;
@@ -68,9 +67,11 @@ static unsigned char nak = EBUS_NAK;
 static unsigned char syn = EBUS_SYN;
 
 //static int sfd;
-static struct termios oldtio;
+//static struct termios oldtio;
 
 static FILE *rawfp = NULL;
+
+Logging logBus = Logging();
 
 
 
@@ -137,167 +138,10 @@ eb_diff_time(const struct timeval *tact, const struct timeval *tlast, struct tim
     return (diff < 0);
 }
 
-
-
-int
-eb_raw_file_open(const char *file)
-{
-	rawfp = fopen(file, "w");
-	err_ret_if(rawfp == NULL, -1);
-
-	return 0;
+void gettimeofday(struct timeval *tv, struct timezone *tz) {
+	tv->tv_sec = millis() % 1000;
+	tv->tv_usec = micros();
 }
-
-int
-eb_raw_file_close(void)
-{
-	int ret;
-
-	ret = fflush(rawfp);
-	err_ret_if(ret == EOF, -1);
-
-	ret = fclose(rawfp);
-	err_ret_if(ret == EOF, -1);
-
-	return 0;
-}
-
-int
-eb_raw_file_write(const unsigned char *buf, int buflen)
-{
-	int ret, i;
-
-	for (i = 0; i < buflen; i++) {		
-		ret = fputc(buf[i], rawfp);
-		err_ret_if(ret == EOF, -1);
-	}
-
-	ret = fflush(rawfp);
-	err_ret_if(ret == EOF, -1);
-
-	return 0;
-}
-
-
-
-int
-eb_serial_valid()
-{
-	return Serial.begin(9600);
-}
-
-int
-eb_serial_open(const char *dev, int *fd)
-{
-	int ret;
-	struct termios newtio;
-
-	sfd = open(dev, O_RDWR | O_NOCTTY | O_NDELAY);
-	//~ err_ret_if(sfd < 0, -1);
-	if (sfd < 0)
-		return -1;
-
-	ret = fcntl(sfd, F_SETFL, 0);
-	err_ret_if(ret < 0, -1);
-
-	/* check if the usb device is working */
-	ret = eb_serial_valid();
-	err_ret_if(ret < 0, -2);
-
-	/* save current settings of serial port */
-	ret = tcgetattr(sfd, &oldtio);
-	err_ret_if(ret < 0, -1);
-
-	memset(&newtio, '\0', sizeof(newtio));
-
-	newtio.c_cflag = SERIAL_BAUDRATE | CS8 | CLOCAL | CREAD;
-	newtio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-	newtio.c_iflag = IGNPAR;
-	newtio.c_oflag &= ~OPOST;
-
-	newtio.c_cc[VMIN]  = 1;
-	newtio.c_cc[VTIME] = 0;
-
-	ret = tcflush(sfd, TCIFLUSH);
-	err_ret_if(ret < 0, -1);
-
-	/* activate new settings of serial port */
-	ret = tcsetattr(sfd, TCSANOW, &newtio);
-	err_ret_if(ret < 0, -1);
-
-	*fd = sfd;
-
-	return 0;
-}
-
-int
-eb_serial_close(void)
-{
-	int ret;
-
-	/* activate old settings of serial port */
-	ret = tcsetattr(sfd, TCSANOW, &oldtio);
-	/* Ignore this error otherwise USB port may stay unclosed */
-	/* err_ret_if(ret < 0, -1); */
-
-	/* Close file descriptor from serial device */
-	ret = close(sfd);
-	err_ret_if(ret < 0, -1);
-
-	return 0;
-}
-
-int
-eb_serial_send(const unsigned char *buf, int buflen)
-{
-	int ret, val;
-	
-	/* write msg to ebus device */
-	val = write(sfd, buf, buflen);
-	err_ret_if(val < 0, -1);
-	
-	ret = tcflush(sfd, TCIOFLUSH);
-	err_ret_if(ret < 0, -1);
-
-	return val;
-}
-
-int
-eb_serial_recv(unsigned char *buf, int *buflen)
-{
-	int ret;
-
-	/* flush deactivated - brings us an error */
-	/* tcflush(sfd, TCIOFLUSH); */
-
-	/* read msg from ebus device */
-	*buflen = read(sfd, buf, *buflen);
-	err_if(*buflen < 0);
-
-	if (*buflen < 0) {
-		log_print(L_WAR, "error read serial device");
-		return -1;
-	}
-
-	if (*buflen > SERIAL_BUFSIZE) {
-		log_print(L_WAR, "read data len > %d", SERIAL_BUFSIZE);
-		return -3;
-	}
-
-	/* print bus */
-	if (showraw == YES)
-		eb_print_hex(buf, *buflen);
-
-	/* dump raw data*/
-	if (rawdump == YES) {
-		ret = eb_raw_file_write(buf, *buflen);
-		if (ret < 0)
-			log_print(L_WAR, "can't write rawdata");
-	}
-
-	return 0;
-}
-
 
 
 void
@@ -309,6 +153,7 @@ eb_print_result(void)
 		fprintf(stdout, " %02x", recv_data.msg[i]);
 	fprintf(stdout, "\n");
 }
+
 
 void
 eb_print_hex(const unsigned char *buf, int buflen)
@@ -323,7 +168,8 @@ eb_print_hex(const unsigned char *buf, int buflen)
 		sprintf(&msg[3 * j], " %02x", buf[i]);
 		
 		if (j + 1 == print_size) {
-			log_print(L_EBH, "%d%s", k, msg);
+			logBus.Debug("%d%s", k, msg);
+			//log_print(L_EBH, k, msg);
 			memset(msg, '\0', sizeof(msg));		
 			j = -1;
 			k++;
@@ -332,10 +178,21 @@ eb_print_hex(const unsigned char *buf, int buflen)
 
 	if (j > 0) {
 		if (k > 1)
-			log_print(L_EBH, "%d%s", k, msg);
+			//log_print(L_EBH, "%d%s", k, msg);
+			logBus.Debug("%d%s", k, msg);
 		else
-			log_print(L_EBH, " %s", msg);
+			//log_print(L_EBH, " %s", msg);
+			logBus.Debug(" %s", msg);
 	}
+}
+
+
+int eb_serial_recv(char *buf, int *buflen) {
+	*buflen = Serial.readBytes(buf, *buflen);
+	if (*buflen <= 0) 
+		return -1;
+	else
+		return 0;
 }
 
 
@@ -555,9 +412,10 @@ eb_bus_wait(void)
 		/* wait ~4200 usec */
 		if (max_wait - tdiff.tv_usec > 0.0 &&
 		    max_wait - tdiff.tv_usec <= max_wait)
-			usleep(max_wait - tdiff.tv_usec);
+			delayMicroseconds(max_wait - tdiff.tv_usec);
 		else 
-			log_print(L_WAR, "usleep out of range - skipped");
+			//log_print(L_WAR, "delayMicroseconds out of range - skipped");
+			logBus.Error("delayMicroseconds out of range - skipped");
 
 		/* receive 1 byte - must be QQ */
 		memset(buf, '\0', sizeof(buf));
@@ -887,149 +745,6 @@ eb_send_data(const unsigned char *buf, int buflen, int type, unsigned char *bus,
 
 
 
-void
-eb_execute(int id, char *data, char *buf, int *buflen)
-{
-	unsigned char msg[SERIAL_BUFSIZE], hlp[CMD_DATA_SIZE], bus[TMP_BUFSIZE];
-	char tmp[TMP_BUFSIZE];
-	int ret, msglen, buslen, msgtype, retry, cycdata, pos, len;
-
-	memset(msg, '\0', sizeof(msg));
-	msglen = sizeof(msg);
-	msgtype = eb_cmd_get_s_type(id);
-				
-	cycdata = NO;
-	ret = -1;
-	retry = 0;
-
-	if (eb_cmd_check_type(id, "cyc") == YES) {
-		cycdata = YES;		
-	} else {
-		/* prepare command - if prepare failed buflen > 0 */
-		eb_cmd_prepare(id, data, msg, &msglen, buf);
-		/* eb_print_hex(msg, msglen); */
-	}		
-
-	if (cycdata == NO && strlen(buf) == 0) {
-		/* send data to bus */
-		while (ret < 0 && retry < send_retry) {
-			if (retry > 0)
-				log_print(L_NOT, "send retry: %d", retry);
-				
-			memset(bus, '\0', sizeof(bus));
-			buslen = 0;
-
-			ret = eb_send_data(msg, msglen, msgtype, bus, &buslen);
-			
-			if (buslen > 0)			
-				eb_print_hex(bus, buslen);
-	
-			retry++;
-		}
-	}
-
-	/* handle answer for sent messages */
-	if (cycdata == NO && ret >= 0)  {
-				
-		if (msgtype == EBUS_MSG_BROADCAST)
-			strcpy(buf, "broadcast done\n");
-
-		if (msgtype == EBUS_MSG_MASTER_MASTER) {
-			if (ret == 0)
-				strcpy(buf, "ACK\n");
-			else
-				strcpy(buf, "NAK\n");
-		}
-
-		if (msgtype == EBUS_MSG_MASTER_SLAVE) {
-			if (ret == 0) {
-				memset(msg, '\0', sizeof(msg));
-				msglen = sizeof(msg);
-				eb_recv_data_get(msg, &msglen);
-				/* eb_print_hex(msg, msglen); */
-
-				/* decode */
-				if (eb_cmd_check_type(id, "set") == YES) {
-					strcpy(buf, "ACK\n");
-				} else {					
-					eb_cmd_decode(id, CMD_PART_SD, data, msg, buf);
-					if (strlen(buf) > 0)
-						strncat(buf, "\n", 1);
-				}
-				
-			} else {
-				strcpy(buf, "NAK\n");
-			}
-		}
-
-	} else if (cycdata == YES) {
-		memset(tmp, '\0', sizeof(tmp));
-		memset(hlp, '\0', sizeof(hlp));
-		
-		eb_cmd_get_cyc_buf(id, msg, &msglen);
-
-		/* CMD_PART_MD */
-		pos = 4;
-		len = 1 + (int) msg[4];
-		memcpy(hlp, &msg[pos], len);
-
-
-		eb_cmd_decode(id, CMD_PART_MD, data, hlp, tmp);
-		strncpy(buf, tmp, strlen(tmp));
-
-		if (msgtype != EBUS_MSG_BROADCAST) {
-			/* CMD_PART_SA */
-			memset(tmp, '\0', sizeof(tmp));
-			memset(hlp, '\0', sizeof(hlp));
-			
-			pos =  5 + (int) msg[4] + 1;
-			len = 2;
-			hlp[0] = 0x01;
-			memcpy(&hlp[1], &msg[pos], 1);		
-			
-			eb_cmd_decode(id, CMD_PART_SA, data, hlp, tmp);
-			strncat(buf, tmp, strlen(tmp));			
-		}
-
-		if (msgtype == EBUS_MSG_MASTER_SLAVE) {
-			/* CMD_PART_SD */
-			memset(tmp, '\0', sizeof(tmp));
-			memset(hlp, '\0', sizeof(hlp));
-			
-			pos =  5 + (int) msg[4] + 2;
-			len = 1 + (int) msg[pos];
-			memcpy(hlp, &msg[pos], len);		
-			
-			eb_cmd_decode(id, CMD_PART_SD, data, hlp, tmp);
-			strncat(buf, tmp, strlen(tmp));
-			memset(tmp, '\0', sizeof(tmp));
-			memset(hlp, '\0', sizeof(hlp));
-
-			/* CMD_PART_MA */
-			pos =  5 + (int) msg[4] + 2 +(int) msg[pos] + 2;
-			len = 2;
-			hlp[0] = 0x01;
-			memcpy(&hlp[1], &msg[pos], 1);		
-			
-			eb_cmd_decode(id, CMD_PART_MA, data, hlp, tmp);
-			strncat(buf, tmp, strlen(tmp));			
-		}
-		
-		if (strlen(buf) > 0)
-			strncat(buf, "\n", 1);
-		else
-			strcpy(buf, "error get cyc data\n");
-			
-	} else {
-		strcpy(buf, "error send ebus msg\n");
-	}
-	
-	*buflen = strlen(buf);
-	
-}
-
-
-
 int
 eb_cyc_data_process(const unsigned char *buf, int buflen)
 {
@@ -1065,7 +780,8 @@ eb_cyc_data_process(const unsigned char *buf, int buflen)
 		crcm_recv = msg[mlen];
 
 		if (crcm_calc != crcm_recv) {
-			log_print(L_WAR, "%s", "Master CRC Error");
+			//log_print(L_WAR, "%s", "Master CRC Error");
+			logBus.Error("%s", "Master CRC Error");
 			return -2;
 		}
 
@@ -1079,7 +795,8 @@ eb_cyc_data_process(const unsigned char *buf, int buflen)
 			acks = msg[mlen + 1];
 
 			if (acks == EBUS_NAK) {
-				log_print(L_WAR, "%s", "Slave ACK Error");
+				//log_print(L_WAR, "%s", "Slave ACK Error");
+				logBus.Error("%s", "Slave ACK Error");
 				//~ return -2;
 			}
 
@@ -1103,7 +820,8 @@ eb_cyc_data_process(const unsigned char *buf, int buflen)
 			crcs_recv = msg[mlen + 2 + slen];
 
 			if (crcs_calc != crcs_recv) {
-				log_print(L_WAR, "%s", "Slave CRC Error");
+				//log_print(L_WAR, "%s", "Slave CRC Error");
+				logBus.Error("%s", "Slave CRC Error");
 				return -2;
 			}
 
@@ -1111,7 +829,8 @@ eb_cyc_data_process(const unsigned char *buf, int buflen)
 			ackm = msg[mlen + 2 + slen + 1];
 
 			if (ackm == EBUS_NAK) {
-				log_print(L_WAR, "%s", "Master ACK Error");
+				//log_print(L_WAR, "%s", "Master ACK Error");
+				logBus.Error("%s", "Master ACK Error");
 				//~ return -2;
 			}
 
@@ -1121,7 +840,8 @@ eb_cyc_data_process(const unsigned char *buf, int buflen)
 
 		/* check len */			
 		if (msglen > len) {
-			log_print(L_WAR, "%s", "LEN Error");
+			//log_print(L_WAR, "%s", "LEN Error");
+			logBus.Error("%s", "LEN Error");
 			return -2;
 						
 		}
@@ -1175,7 +895,8 @@ eb_cyc_data_recv()
 				memset(tmp, '\0', sizeof(tmp));
 				eb_execute(ret, "-", tmp, &tmplen);
 				tmp[strcspn(tmp,"\n")] = '\0';
-				log_print(L_EBS, "%s", tmp);
+				//log_print(L_EBS, "%s", tmp);
+				logBus.Debug("%s", tmp);
 			}
 				
 			memset(msg, '\0', sizeof(msg));		

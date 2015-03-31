@@ -37,15 +37,17 @@
 #include <errno.h>
 #include <dirent.h>
 
-#include "log.h"
 #include "ebus-decode.h"
 #include "ebus-cmd.h"
+#include <Logging.h>
 
 static struct cycbuf *cyc = NULL;
 static int cyclen = 0;
 
 static struct commands *com = NULL;
 static int comlen = 0;
+
+Logging logCmd = Logging();
 
 void
 eb_cmd_uppercase(char *buf)
@@ -109,7 +111,7 @@ eb_cmd_search_com_cyc(const unsigned char *hex, int hexlen)
 	int i;
 
 	if (hexlen > (CMD_SIZE_S_MSG * 2)) {
-		log_print(L_ERR, "hexlen: %d > hlp: %d ", hexlen, (CMD_SIZE_S_MSG * 2));
+		logCmd.Error("hexlen: %d > hlp: %d ", hexlen, (CMD_SIZE_S_MSG * 2));
 		return -2;
 	}
 
@@ -119,8 +121,8 @@ eb_cmd_search_com_cyc(const unsigned char *hex, int hexlen)
 
 	for (i = 0; i < cyclen; i++) {
 		if (memcmp(hlp, cyc[i].msg, strlen((const char *) cyc[i].msg)) == 0) {
-			log_print(L_NOT, " found: %s type: %d ==> id: %d",
-				cyc[i].msg, com[cyc[i].id].s_type, cyc[i].id);
+			//log_print(L_NOT, " found: %s type: %d ==> id: %d",
+			//	cyc[i].msg, com[cyc[i].id].s_type, cyc[i].id);
 					
 			return cyc[i].id;
 		}
@@ -130,20 +132,20 @@ eb_cmd_search_com_cyc(const unsigned char *hex, int hexlen)
 }
 
 int
-eb_cmd_search_com_id(const char *type, const char *class, const char *cmd)
+eb_cmd_search_com_id(const char *type, const char *ebusclass, const char *cmd)
 {
 	int i;
 
 	for (i = 0; i < comlen; i++) {
 		if ((strncasecmp(type, com[i].type, strlen(com[i].type)) == 0)
-		   && (strncasecmp(class, com[i].class, strlen(com[i].class)) == 0)
-		   && strlen(class) == strlen(com[i].class)
+		   && (strncasecmp(ebusclass, com[i].ebusclass, strlen(com[i].ebusclass)) == 0)
+		   && strlen(ebusclass) == strlen(com[i].ebusclass)
 		   && (strncasecmp(cmd, com[i].cmd, strlen(com[i].cmd)) == 0)			   
 		   && strlen(cmd) == strlen(com[i].cmd)) {
 
-			log_print(L_NOT, " found: %s%s%02X%s type: %d ==> id: %d",
-				com[i].s_zz, com[i].s_cmd, com[i].s_len,
-				com[i].s_msg, com[i].s_type, i);
+			//log_print(L_NOT, " found: %s%s%02X%s type: %d ==> id: %d",
+			//	com[i].s_zz, com[i].s_cmd, com[i].s_len,
+			//	com[i].s_msg, com[i].s_type, i);
 			return i;
 		}
 	
@@ -155,21 +157,21 @@ eb_cmd_search_com_id(const char *type, const char *class, const char *cmd)
 int
 eb_cmd_search_com(char *buf, char *data)
 {
-	char *type, *class, *cmd, *tok;
+	char *type, *ebusclass, *cmd, *tok;
 	int id;
 
 	type = strtok(buf, " ");
-	class = strtok(NULL, " .");
+	ebusclass = strtok(NULL, " .");
 	cmd = strtok(NULL, " .\n\r\t");
 	
-	if (class != NULL && cmd != NULL) {
+	if (ebusclass != NULL && cmd != NULL) {
 	
 		if (strncasecmp(type, "get", 3) == 0 ||
 		    strncasecmp(type, "set", 3) == 0 ||
 		    strncasecmp(type, "cyc", 3) == 0) {
-			log_print(L_NOT, "search: %s %s.%s", type, class, cmd);
+			//log_print(L_NOT, "search: %s %s.%s", type, ebusclass, cmd);
 			
-			id = eb_cmd_search_com_id(type, class, cmd);
+			id = eb_cmd_search_com_id(type, ebusclass, cmd);
 			if (id < 0)
 				return -1;
 			
@@ -180,7 +182,7 @@ eb_cmd_search_com(char *buf, char *data)
 			else
 				strncpy(data, tok, strlen(tok));			
 			
-			log_print(L_NOT, "  data: %s", data);
+			//log_print(L_NOT, "  data: %s", data);
 			return id;
 
 		}
@@ -213,7 +215,8 @@ eb_cmd_decode_value(int id, int elem, unsigned char *msg, char *buf)
 	p3 = c3 ? atoi(c3) : 0;
 	p4 = c4 ? atoi(c4) : 0;
 
-	log_print(L_DBG, "id: %d elem: %d p1: %d p2: %d p3: %d p4: %d", id, elem, p1, p2, p3, p4);	
+	//log_print(L_DBG, "id: %d elem: %d p1: %d p2: %d p3: %d p4: %d", id, elem, p1, p2, p3, p4);	
+	logCmd.Debug("id: %d elem: %d p1: %d p2: %d p3: %d p4: %d", id, elem, p1, p2, p3, p4);	;
 
 	if (strncasecmp(com[id].elem[elem].d_type, "asc", 3) == 0) {
 		sprintf(buf, "%s", &msg[1]);
@@ -365,7 +368,8 @@ eb_cmd_decode_value(int id, int elem, unsigned char *msg, char *buf)
 			
 	}
 
-	log_print(L_DBG, "buf: %s", buf);	
+	//log_print(L_DBG, "buf: %s", buf);	
+	logCmd.Debug("buf: %s", buf);
 		
 	return 0;
 
@@ -446,7 +450,9 @@ eb_cmd_encode_value(int id, int elem, char *data, unsigned char *msg, char *buf)
 	p2 = c2 ? atoi(c2) : 0;
 	p3 = c3 ? atoi(c3) : 0;
 	
-	log_print(L_DBG, "id: %d elem: %d p1: %d p2: %d p3: %d data: %s",
+	//log_print(L_DBG, "id: %d elem: %d p1: %d p2: %d p3: %d data: %s",
+	//					id, elem, p1, p2, p3, data);
+	logCmd.Debug("id: %d elem: %d p1: %d p2: %d p3: %d data: %s",
 						id, elem, p1, p2, p3, data);
 					
 	if (strncasecmp(com[id].elem[elem].d_type, "asc", 3) == 0) {
@@ -664,11 +670,11 @@ eb_cmd_print(const char *type, int all, int detail)
 
 		if (strncasecmp(com[i].type, type, 1) == 0 || all) {
 
-			log_print(L_INF, "[%03d] %s : %5s.%-32s\t(type: %d)" \
+			logCmd.Info("[%03d] %s : %5s.%-32s\t(type: %d)" \
 					 " %s%s%-10s (len: %d) [%d] ==> %s",
 				com[i].id,
 				com[i].type,
-				com[i].class,
+				com[i].ebusclass,
 				com[i].cmd,
 				com[i].s_type,
 				com[i].s_zz,
@@ -681,7 +687,7 @@ eb_cmd_print(const char *type, int all, int detail)
 
 			if (detail) {
 				for (j = 0; j < com[i].d_elem; j++) {
-					log_print(L_INF, "\t\t  %-20s %-2s " \
+					logCmd.Info("\t\t  %-20s %-2s " \
 					"pos: %-10s\t%s [%5.2f] [%s] \t%s\t%s",
 						com[i].elem[j].d_sub,
 						com[i].elem[j].d_part,
@@ -694,7 +700,7 @@ eb_cmd_print(const char *type, int all, int detail)
 				
 						);
 				}
-				log_print(L_INF, "");
+				logCmd.Info("");
 			}
 
 			
@@ -710,7 +716,7 @@ eb_cmd_fill(const char *tok)
 	int i;
 	
 	com = (struct commands *) realloc(com, (comlen + 1) * sizeof(struct commands));
-	err_ret_if(com == NULL, -1);
+	if(com == NULL) return -1;
 
 	memset(com + comlen, '\0', sizeof(struct commands));
 	
@@ -720,9 +726,9 @@ eb_cmd_fill(const char *tok)
 	/* type */
 	strncpy(com[comlen].type, tok, strlen(tok));
 	
-	/* class */
+	/* ebusclass */
 	tok = strtok(NULL, ";");
-	strncpy(com[comlen].class, tok, strlen(tok));
+	strncpy(com[comlen].ebusclass, tok, strlen(tok));
 
 	
 	/* cmd */
@@ -764,7 +770,7 @@ eb_cmd_fill(const char *tok)
 	com[comlen].d_elem = atoi(tok);
 	
 	com[comlen].elem = (struct element *) malloc(com[comlen].d_elem * sizeof(struct element));
-	err_ret_if(com[comlen].elem == NULL, -1);
+	if(com[comlen].elem == NULL) return -1;
 
 	memset(com[comlen].elem, '\0', com[comlen].d_elem * sizeof(struct element));	
 
@@ -809,7 +815,7 @@ eb_cmd_fill(const char *tok)
 	if (strncasecmp(com[comlen].type, "cyc", 3) == 0) {
 
 		cyc = (struct cycbuf *) realloc(cyc, (cyclen + 1) * sizeof(struct cycbuf));
-		err_ret_if(cyc == NULL, -1);
+		if(cyc == NULL) return -1;
 
 		memset(cyc + cyclen, '\0', sizeof(struct cycbuf));		
 
@@ -844,110 +850,4 @@ eb_cmd_num_c(const char *str, const char c)
 	return i;
 }
 
-int
-eb_cmd_file_read(const char *file)
-{
-	int ret;
-	char line[CMD_LINELEN];
-	char *tok;
-	FILE *fp = NULL;
-
-	log_print(L_NOT, "%s", file);
-
-	/* open config file */
-	fp = fopen(file, "r");
-	err_ret_if(fp == NULL, -1);			
-
-	/* read each line and fill cmd array */
-	while (fgets(line, CMD_LINELEN, fp) != NULL) {
-		tok = strtok(line, ";\n");
-			
-		if (tok != NULL && tok[0] != '#' ) {
-
-			ret = eb_cmd_fill(tok);
-			if (ret < 0)
-				return -2;
-				
-		}
-
-	}
-	
-	/* close config file */
-	ret = fclose(fp);
-	err_ret_if(ret == EOF, -1);
-
-	log_print(L_NOT, "%s success", file);
-
-	return 0;
-}
-
-int
-eb_cmd_dir_read(const char *cfgdir, const char *extension)
-{
-	struct dirent **dir;
-	int ret, i, j, files, extlen;
-	char file[CMD_FILELEN], extprep[11];
-	char *ext;
-
-	extlen = strlen(extension) + 1;
-
-	memset(extprep, '\0', sizeof(extprep));
-	extprep[0] = '.';
-	strncpy(&extprep[1], extension, strlen(extension));
-
-	files = scandir(cfgdir, &dir, 0, alphasort);
-	if (files < 0) {
-		log_print(L_WAR, "configuration directory %s not found.", cfgdir);
-		return 1;
-	}
-	
-	i = 0;
-	j = 0;
-	while (i < files) {
-		ext = strrchr(dir[i]->d_name, '.');
-			if (ext != NULL) {
-				if (strlen(ext) == extlen
-				    && dir[i]->d_type == DT_REG
-				    && strncasecmp(ext, extprep, extlen) == 0 ) {
-					memset(file, '\0', sizeof(file));
-					sprintf(file, "%s/%s", cfgdir, dir[i]->d_name);
-									
-					ret = eb_cmd_file_read(file);
-					if (ret < 0)
-						return -1;
-
-					j++;
-				}
-			}
-			
-		free(dir[i]);
-		i++;
-	}
-	
-	free(dir);
-
-	if (j == 0) {
-		log_print(L_WAR, "no command files found ==> decode disabled.");
-		return 2;
-	}
-	
-	return 0;
-}
-
-void
-eb_cmd_dir_free(void)
-{
-	int i;
-
-	if (comlen > 0) {
-		for (i = 0; i < comlen; i++)
-			free(&com[i].elem[0]);
-	
-		free(com);
-	}
-
-	if (cyclen > 0)
-		free(cyc);
-	
-}
 
